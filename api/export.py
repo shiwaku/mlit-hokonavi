@@ -17,7 +17,7 @@ from api.graph import SNAP_CANDIDATES, SNAP_RADII_M, PedestrianGraph
 from api.profiles import PROFILES
 
 # 静的 JSON の形式の版。配列を足したり意味を変えたら上げる（web/src/lib/routing/types.ts の FORMAT と揃える）
-STATIC_FORMAT = 1
+STATIC_FORMAT = 2  # 2: source（1 件）→ sources（まとめた地区は複数）・title
 
 
 def _decode(table: dict, v: int) -> str | None:
@@ -113,7 +113,8 @@ def static_graph(g: PedestrianGraph) -> dict:
     return {
         'format': STATIC_FORMAT,
         'case': g.case,
-        'source': getattr(g, 'source', None),
+        'title': g.title,
+        'sources': g.sources,
         'floors': g.floors,
         'lat0': g.lat0,
         'snap': {'radii_m': list(SNAP_RADII_M), 'candidates': SNAP_CANDIDATES},

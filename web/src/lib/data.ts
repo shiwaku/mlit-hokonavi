@@ -2,14 +2,15 @@
 import type { Network, Profile, ProfileKey, Route } from './api.ts';
 import { buildRoute } from './routing/guidance.ts';
 import { Router } from './routing/router.ts';
-import { FORMAT, type AreaList, type StaticGraph } from './routing/types.ts';
+import { FORMAT, type AreaList, type Source, type StaticGraph } from './routing/types.ts';
 
 export interface Area {
 	case: string;
 	router: Router;
 	network: Network;
 	profiles: Profile[];
-	source: StaticGraph['source'];
+	title: string;
+	sources: Source[];
 	floors: number[];
 	links: number;
 }
@@ -41,10 +42,21 @@ export async function loadArea(c: string): Promise<Area> {
 		router: new Router(graph),
 		network,
 		profiles,
-		source: graph.source,
+		title: graph.title,
+		sources: graph.sources,
 		floors: graph.floors,
 		links: graph.links.u.length
 	};
+}
+
+/** 公共データ利用規約（第1.0版）の出典表示。まとめた地区は元の地区を全部並べ、加工している旨も書く */
+export function attributionHtml(sources: Source[]): string {
+	if (!sources.length) return '';
+	const esc = (t: string) => t.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
+	const titles = sources.map((s) => `「<a href="${s.url}" target="_blank" rel="noopener">${esc(s.title)}</a>」`).join('');
+	const pubs = [...new Set(sources.map((s) => s.publisher).filter(Boolean))].join('・');
+	const lic = sources[0];
+	return `出典：${esc(pubs)}${titles}（<a href="${lic.license_url}" target="_blank" rel="noopener">${esc(lic.license)}</a>）を加工して作成`;
 }
 
 export interface RouteQuery {

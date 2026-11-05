@@ -5,7 +5,8 @@ Python（api/）とブラウザ（web/src/lib/routing/）の探索結果を揃�
 web/src/lib/routing/__fixtures__/parity.json に書き出す。web 側の vitest が同じ問い合わせを TS で解き、一致を確かめる。
 
   uv run python -m tests.test_parity --write              # フィクスチャを作り直す（探索・案内を変えたら）
-  uv run python -m tests.test_parity --real shinjuku      # 実データでも比べる（git 管理外の network/ に書く）
+  uv run python -m tests.test_parity --real tokyo --real ariake_tennis   # 実データでも比べる（network/ に書く）
+  uv run python -m tests.test_parity --real-all           # network/areas.json の全地区
 
 pytest はフィクスチャが今のコードの出力と同じか（作り直し忘れがないか）だけを見る。
 """
@@ -27,8 +28,8 @@ FIXTURE = BASE / 'web' / 'src' / 'lib' / 'routing' / '__fixtures__' / 'parity.js
 PROFILES = ('walk', 'wheelchair', 'stroller', 'vision')
 
 
-def route_body(g: PedestrianGraph, q: dict) -> dict:
-    """API の /route と同じ形（elapsed_ms を除く）"""
+def route_body(g: PedestrianGraph, q: dict) -> tuple[dict, float | None]:
+    """API の /route と同じ形（elapsed_ms を除く）と、探索のコスト（同点の判定に使う）"""
     r = g.route(
         q['from_lat'], q['from_lon'], q['to_lat'], q['to_lon'], q['profile'], q.get('from_floor'), q.get('to_floor')
     )
@@ -44,7 +45,12 @@ def route_body(g: PedestrianGraph, q: dict) -> dict:
     }
     if r['unreachable_reason'] is None:
         body.update(guidance.build(g, r, q['profile']))
-    return body
+    return body, r['cost']
+
+
+def case_of(g: PedestrianGraph, query: dict) -> dict:
+    body, cost = route_body(g, query)
+    return {'query': query, 'expected': body, 'cost': cost}
 
 
 def q(a, b, profile, **kw):
@@ -71,7 +77,7 @@ def synthetic_cases() -> list[dict]:
         for a, b, kw in pairs:
             for p in PROFILES:
                 query = q(a, b, p, **kw)
-                cases.append({'query': query, 'expected': route_body(g, query)})
+                cases.append(case_of(g, query))
         out.append({'name': name, 'graph': static_graph(g), 'cases': cases})
     return out
 
@@ -86,7 +92,7 @@ def real_cases(case: str, n: int = 200, seed: int = 1) -> dict:
         i, j = rng.randrange(g.n_nodes), rng.randrange(g.n_nodes)
         jitter = lambda: rng.uniform(-0.0002, 0.0002)  # noqa: E731  約 20 m
         query = q((lat[i] + jitter(), lon[i] + jitter()), (lat[j] + jitter(), lon[j] + jitter()), rng.choice(PROFILES))
-        cases.append({'query': query, 'expected': route_body(g, query)})
+        cases.append(case_of(g, query))
     return {'name': case, 'graph': static_graph(g), 'cases': cases}
 
 
@@ -104,15 +110,19 @@ def test_parity_fixture_is_up_to_date():
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument('--write', action='store_true')
-    ap.add_argument('--real', help='network/<case>/parity.json に実データでの比較用を書く')
+    ap.add_argument('--real', action='append', default=[], help='network/<case>/parity.json に比較用を書く（複数可）')
+    ap.add_argument('--real-all', action='store_true', help='network/areas.json の全地区で --real')
     args = ap.parse_args()
     if args.write:
         FIXTURE.parent.mkdir(parents=True, exist_ok=True)
         FIXTURE.write_text(dumps(synthetic_cases()), encoding='utf-8')
         print(FIXTURE, file=sys.stderr)
-    if args.real:
-        out = BASE / 'network' / args.real / 'parity.json'
-        out.write_text(json.dumps([real_cases(args.real)], ensure_ascii=False, allow_nan=False), encoding='utf-8')
+    cases = args.real
+    if args.real_all:
+        cases = [a['case'] for a in json.loads((BASE / 'network' / 'areas.json').read_text(encoding='utf-8'))]
+    for case in cases:
+        out = BASE / 'network' / case / 'parity.json'
+        out.write_text(json.dumps([real_cases(case)], ensure_ascii=False, allow_nan=False), encoding='utf-8')
         print(out, file=sys.stderr)
 
 

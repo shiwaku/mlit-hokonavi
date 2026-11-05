@@ -10,8 +10,9 @@
 	import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
 	import { asset } from '$app/paths';
 	import { formatDuration, type LinkProps, type ProfileKey, type Route } from '#lib/api.ts';
-	import { findRoute, getAreas, loadArea, type Area } from '#lib/data.ts';
+	import { attributionHtml, findRoute, getAreas, loadArea, type Area } from '#lib/data.ts';
 	import { floorLabel } from '#lib/routing/guidance.ts';
+	import type { AreaInfo } from '#lib/routing/types.ts';
 
 	// 地図の色。アクセス区分（0 通れる / 1 不明 / 2 片方向のみ / 3 通れない）
 	const ACCESS_COLOR = ['#64748b', '#f59e0b', '#8b5cf6', '#ef4444'];
@@ -22,6 +23,10 @@
 	let map: maplibregl.Map | undefined;
 	// 探索はブラウザ内（GitHub Pages にはサーバーが無い）。area.router が graph.json から作った探索グラフ
 	let area = $state.raw<Area | null>(null);
+	// 全地区の一覧（名前・範囲）。データは選んだ地区のものだけを読む
+	let areas = $state.raw<AreaInfo[]>([]);
+	let areaCase = $state('');
+	let loadingArea = $state(false);
 	let loadError = $state<string | null>(null);
 	const profiles = $derived(area?.profiles ?? []);
 	let profile = $state<ProfileKey>('walk');
@@ -83,8 +88,30 @@
 		search();
 	}
 
+	const inBbox = (b: AreaInfo['bbox'], [x, y]: [number, number], pad = 0) =>
+		x >= b[0] - pad && x <= b[2] + pad && y >= b[1] - pad && y <= b[3] + pad;
+
 	function onMapClick(e: MapMouseEvent) {
 		const p: [number, number] = [e.lngLat.lng, e.lngLat.lat];
+		if (loadingArea) return;
+		// 地区の点をクリックしたら、その地区へ（縮小時は点のほうが地区の範囲より大きい）
+		const hit = map?.getLayer('areas-point')
+			? map.queryRenderedFeatures(
+					[
+						[e.point.x - 6, e.point.y - 6],
+						[e.point.x + 6, e.point.y + 6]
+					],
+					{ layers: ['areas-point'] }
+				)[0]
+			: undefined;
+		const hitCase = hit?.properties?.case as string | undefined;
+		if (hitCase && hitCase !== areaCase) return void selectArea(hitCase);
+		// 今の地区の外で、ほかの地区の範囲内をクリックしたら、その地区に切り替える（今の地区には約 300 m の余裕）
+		const cur = areas.find((a) => a.case === areaCase);
+		if (!cur || !inBbox(cur.bbox, p, 0.003)) {
+			const other = areas.find((a) => a.case !== areaCase && inBbox(a.bbox, p));
+			if (other) return void selectArea(other.case);
+		}
 		if (!origin) origin = p;
 		else dest = p;
 		search();
@@ -104,7 +131,8 @@
 	});
 
 	$effect(() => {
-		if (!ready || !map) return;
+		// area: 地区を切り替えるとネットワークのレイヤーを作り直すので、そのたびに塗り直す
+		if (!ready || !map || !area) return;
 		const acc: ExpressionSpecification = ['get', `acc_${profile}`];
 		map.setPaintProperty('network', 'line-color', ['match', acc, 1, ACCESS_COLOR[1], 2, ACCESS_COLOR[2], 3, ACCESS_COLOR[3], ACCESS_COLOR[0]]);
 		map.setPaintProperty('network', 'line-dasharray', ['case', ['==', acc, 3], ['literal', [1, 1]], ['literal', [1, 0]]]);
@@ -181,6 +209,56 @@
 		);
 	}
 
+	/** ネットワークのソースとレイヤーを地区ごとに作り直す（出典表示が地区ごとに違うため） */
+	function showNetwork(m: maplibregl.Map, a: Area | null) {
+		if (m.getLayer('network')) m.removeLayer('network');
+		if (m.getSource('network')) m.removeSource('network');
+		m.addSource('network', {
+			type: 'geojson',
+			data: a?.network ?? EMPTY,
+			attribution: a ? attributionHtml(a.sources) : undefined
+		});
+		m.addLayer(
+			{
+				id: 'network',
+				type: 'line',
+				source: 'network',
+				paint: { 'line-color': ACCESS_COLOR[0], 'line-width': ['interpolate', ['linear'], ['zoom'], 12, 1, 14, 1.8, 18, 4] }
+			},
+			'route-casing'
+		);
+	}
+
+	/** 全地区が入るまで引く（青い点をクリックすると、その地区に切り替わる） */
+	function showAllAreas() {
+		if (!map || !areas.length) return;
+		const b = new maplibregl.LngLatBounds();
+		for (const a of areas) b.extend([a.bbox[0], a.bbox[1]]).extend([a.bbox[2], a.bbox[3]]);
+		map.fitBounds(b, { padding: 60, duration: 600 });
+	}
+
+	async function selectArea(c: string, fit = true) {
+		if (!map || loadingArea) return;
+		loadingArea = true;
+		loadError = null;
+		try {
+			const a = await loadArea(c);
+			clearAll();
+			fromFloor = toFloor = null;
+			viewFloor = 'all';
+			floors = a.floors;
+			area = a;
+			areaCase = c;
+			showNetwork(map, a);
+			const info = areas.find((x) => x.case === c);
+			if (fit && info) map.fitBounds(info.bbox, { padding: 40, duration: 600 });
+		} catch (e) {
+			loadError = (e as Error).message;
+		} finally {
+			loadingArea = false;
+		}
+	}
+
 	onMount(async () => {
 		maplibregl.setWorkerUrl(workerUrl);
 		maplibregl.addProtocol('pmtiles', protocol.tile);
@@ -197,37 +275,50 @@
 		map.addControl(new maplibregl.NavigationControl(), 'top-right');
 		map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-right');
 
-		let a: Area | null = null;
+		let first = '';
 		try {
 			const list = await getAreas();
-			a = await loadArea(list.default);
+			areas = list.areas;
+			first = list.default;
 		} catch (e) {
 			loadError = (e as Error).message;
 		}
-		area = a;
-		floors = a?.floors ?? [];
-		const net = a?.network ?? null;
 		await mapLoaded;
 		const m = map;
 
-		const src = a?.source;
-		m.addSource('network', {
+		// 全地区の範囲（枠）と位置（点）。縮小しても地区が見つかるように
+		m.addSource('areas', {
 			type: 'geojson',
-			data: net ?? EMPTY,
-			// 公共データ利用規約（第1.0版）の出典表示。加工している旨も書く
-			attribution: src
-				? `出典：${src.publisher ?? ''}「<a href="${src.url}" target="_blank" rel="noopener">${src.title}</a>」（<a href="${src.license_url}" target="_blank" rel="noopener">${src.license}</a>）を加工して作成`
-				: undefined
+			data: {
+				type: 'FeatureCollection',
+				features: areas.flatMap((a) => {
+					const [w, s, e, n] = a.bbox;
+					const props = { case: a.case, title: a.title };
+					return [
+						{ type: 'Feature', properties: props, geometry: { type: 'Polygon', coordinates: [[[w, s], [e, s], [e, n], [w, n], [w, s]]] } },
+						{ type: 'Feature', properties: props, geometry: { type: 'Point', coordinates: [(w + e) / 2, (s + n) / 2] } }
+					] as GeoJSON.Feature[];
+				})
+			}
+		});
+		m.addLayer({
+			id: 'areas-outline',
+			type: 'line',
+			source: 'areas',
+			filter: ['==', ['geometry-type'], 'Polygon'],
+			paint: { 'line-color': '#2563eb', 'line-width': 1.5, 'line-dasharray': [3, 2], 'line-opacity': 0.6 }
+		});
+		m.addLayer({
+			id: 'areas-point',
+			type: 'circle',
+			source: 'areas',
+			maxzoom: 13,
+			filter: ['==', ['geometry-type'], 'Point'],
+			paint: { 'circle-color': '#2563eb', 'circle-radius': 7, 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 }
 		});
 		m.addSource('route', { type: 'geojson', data: EMPTY });
 		m.addSource('snap', { type: 'geojson', data: EMPTY });
 		m.addSource('step', { type: 'geojson', data: EMPTY });
-		m.addLayer({
-			id: 'network',
-			type: 'line',
-			source: 'network',
-			paint: { 'line-color': ACCESS_COLOR[0], 'line-width': ['interpolate', ['linear'], ['zoom'], 14, 1, 18, 4] }
-		});
 		m.addLayer({
 			id: 'route-casing',
 			type: 'line',
@@ -264,12 +355,6 @@
 			paint: { 'circle-color': '#f97316', 'circle-radius': 8, 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 }
 		});
 
-		if (net && net.features.length) {
-			const b = new maplibregl.LngLatBounds();
-			for (const f of net.features) for (const c of f.geometry.coordinates) b.extend(c as [number, number]);
-			m.fitBounds(b, { padding: 40, duration: 0 });
-		}
-
 		const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, maxWidth: '280px' });
 		m.on('mousemove', 'network', (e: maplibregl.MapLayerMouseEvent) => {
 			const f = e.features?.[0];
@@ -281,8 +366,28 @@
 			m.getCanvas().style.cursor = '';
 			popup.remove();
 		});
+		// 地区の点：名前を出す。クリックは onMapClick がその地区に切り替える
+		const areaPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 });
+		m.on('mousemove', 'areas-point', (e: maplibregl.MapLayerMouseEvent) => {
+			const f = e.features?.[0];
+			if (!f) return;
+			m.getCanvas().style.cursor = 'pointer';
+			const el = document.createElement('span');
+			el.className = 'text-xs';
+			el.textContent = String(f.properties?.title ?? '');
+			areaPopup.setLngLat(e.lngLat).setDOMContent(el).addTo(m);
+		});
+		m.on('mouseleave', 'areas-point', () => {
+			m.getCanvas().style.cursor = '';
+			areaPopup.remove();
+		});
 		m.on('click', onMapClick);
 		ready = true;
+		if (first) {
+			const info = areas.find((x) => x.case === first);
+			if (info) m.fitBounds(info.bbox, { padding: 40, duration: 0 });
+			await selectArea(first, false);
+		}
 	});
 
 	onDestroy(() => {
@@ -298,13 +403,32 @@
 		<header class="border-b border-slate-200 px-4 py-3">
 			<h1 class="text-base font-bold text-slate-800">歩行者経路探索</h1>
 			<p class="text-xs text-slate-500">
-				{area?.source?.title ?? '歩行空間ネットワークデータ'}（{area?.links.toLocaleString() ?? '–'}リンク{area?.source?.data_updated
-					? `・${area.source.data_updated} 更新`
-					: ''}）
+				ほこナビDP の歩行空間ネットワークデータ（{areas.length || '–'}地区）
 			</p>
 		</header>
 
 		<div class="space-y-3 overflow-y-auto px-4 py-3">
+			<div class="block">
+				<span class="mb-1 flex items-center justify-between text-xs font-semibold text-slate-600">
+					地区
+					<button type="button" class="rounded border border-slate-300 px-1.5 py-0.5 font-normal hover:bg-slate-50" onclick={showAllAreas}>全地区を表示</button>
+				</span>
+				<select
+					class="w-full rounded border border-slate-300 px-2 py-1 text-sm"
+					aria-label="地区"
+					value={areaCase}
+					disabled={loadingArea}
+					onchange={(e) => selectArea(e.currentTarget.value)}
+				>
+					{#each areas as a (a.case)}
+						<option value={a.case}>{a.title}（{a.links.toLocaleString()}リンク）</option>
+					{/each}
+				</select>
+				<span class="mt-0.5 block text-[10px] text-slate-400">
+					{#if loadingArea}読み込み中…{:else if area}{area.links.toLocaleString()}リンク・{areas.find((a) => a.case === areaCase)?.data_updated ?? '–'} 更新。地図の青い枠・点をクリックしても切り替わります{/if}
+				</span>
+			</div>
+
 			{#if loadError}
 				<p class="rounded bg-red-50 p-2 text-sm text-red-700">データを読めません: {loadError}</p>
 			{/if}

@@ -3,7 +3,7 @@
 
   uv run uvicorn api.main:app --port 8000
 
-探索するネットワークは環境変数 HOKONAVI_CASE（既定 shinjuku）で選ぶ。network/<case>/ に
+探索するネットワークは環境変数 HOKONAVI_CASE（既定 shibuya_sendagaya_shinjuku）で選ぶ。network/<case>/ に
 preprocess/build_network.py の出力が要る。仕様は docs/api-design.md。
 """
 
@@ -28,7 +28,7 @@ state: dict = {'graph': None, 'error': None, 'started_at': time.time(), 'network
 def load_graph(case: str | None = None, net_dir: str | None = None) -> None:
     try:
         state['graph'] = PedestrianGraph(
-            case or os.environ.get('HOKONAVI_CASE', 'shinjuku'),
+            case or os.environ.get('HOKONAVI_CASE', 'shibuya_sendagaya_shinjuku'),
             net_dir or os.environ.get('HOKONAVI_NETWORK_DIR', 'network'),
         )
         state['network'] = None

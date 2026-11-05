@@ -2,7 +2,7 @@
 import type { ProfileKey } from '../api.ts';
 
 /** api/export.py の STATIC_FORMAT と揃える */
-export const FORMAT = 1;
+export const FORMAT = 2;
 
 export interface ProfileData {
 	label: string;
@@ -22,14 +22,10 @@ export interface ProfileData {
 export interface StaticGraph {
 	format: number;
 	case: string;
-	source: {
-		title: string;
-		publisher: string | null;
-		license: string;
-		license_url: string;
-		data_updated: string | null;
-		url: string;
-	} | null;
+	/** 地区の名前（まとめた地区は「／」でつなぐ） */
+	title: string;
+	/** 元の地区（ほこナビDP のデータセット）。公共データ利用規約の出典表示に使う */
+	sources: Source[];
 	floors: number[];
 	lat0: number;
 	snap: { radii_m: number[]; candidates: number };
@@ -51,7 +47,26 @@ export interface StaticGraph {
 	profiles: Record<ProfileKey, ProfileData>;
 }
 
+export interface Source {
+	dataset: string;
+	title: string;
+	publisher: string | null;
+	license: string;
+	license_url: string;
+	data_updated: string | null;
+	url: string;
+}
+
+export interface AreaInfo {
+	case: string;
+	title: string;
+	links: number;
+	/** [西, 南, 東, 北] */
+	bbox: [number, number, number, number];
+	data_updated: string | null;
+}
+
 export interface AreaList {
 	default: string;
-	areas: { case: string; title: string; links: number }[];
+	areas: AreaInfo[];
 }

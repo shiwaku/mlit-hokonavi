@@ -4,7 +4,7 @@ Hokonavi Route Search API（歩行空間ネットワークデータによる歩�
 
 | | |
 |---|---|
-| 版 | 0.1（2026-11-05・新宿駅周辺の 1 地区） |
+| 版 | 0.2（2026-11-05・全 21 地区。1 プロセスで扱うのは HOKONAVI_CASE の 1 地区） |
 | ベース URL | `http://127.0.0.1:8000`（開発）。画面からは同一オリジンの `/api`（Vite が剥がして渡す） |
 | 形式 | JSON / UTF-8（500 バイト以上は gzip） |
 | 認証 | なし |
@@ -55,14 +55,15 @@ flowchart LR
 グラフを読めているか。読めていなければ `status: "error"` と `error` に理由。
 
 ```json
-{"status": "ok", "graph_loaded": true, "uptime_seconds": 12.3, "case": "shinjuku",
- "source": {"title": "歩行空間ネットワークデータ（新宿駅周辺）", "publisher": "国土交通省",
-            "license": "公共データ利用規約(第1.0版）", "license_url": "…", "data_updated": "2018/10/29", "url": "…"},
- "links": 1866, "nodes": 1720, "floors": [-1.0, -0.5, 0.0, 0.5, 1.0],
- "components": {"walk": 14, "wheelchair": 150, "stroller": 136, "vision": 14}, "load_seconds": 0.04}
+{"status": "ok", "graph_loaded": true, "uptime_seconds": 0.1, "case": "shibuya_sendagaya_shinjuku",
+ "title": "東京都渋谷区・渋谷駅、千駄ヶ谷駅周辺／東京都新宿区・新宿駅周辺",
+ "sources": [{"dataset": "nwd_shibuya_sendagaya_shinjuku", "title": "歩行空間ネットワークデータ（…）", "publisher": "国土交通省",
+              "license": "公共データ利用規約(第1.0版）", "license_url": "…", "data_updated": "2021/05/26", "url": "…"}],
+ "links": 7921, "nodes": 7155, "floors": [-1.0, -0.5, 0.0, 0.5, 1.0],
+ "components": {"walk": 1, "wheelchair": 503, "stroller": 424, "vision": 1}, "load_seconds": 0.06}
 ```
 
-`source` は公共データ利用規約の出典表示に使う（画面の地図右下に出す）。
+`sources` は元の地区（まとめた地区でリンクを採ったもの）で、公共データ利用規約の出典表示に使う（画面の地図右下に出す）。
 
 ### 1-2. `GET /profiles`
 

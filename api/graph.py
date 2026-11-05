@@ -77,8 +77,10 @@ class PedestrianGraph:
         links = pd.read_parquet(d / 'links.parquet')
         nodes = pd.read_parquet(d / 'nodes.parquet')
         self._init(links, nodes)
-        report = d / 'report.json'
-        self.source = json.loads(report.read_text(encoding='utf-8')).get('source') if report.exists() else None
+        report = json.loads((d / 'report.json').read_text(encoding='utf-8')) if (d / 'report.json').exists() else {}
+        # 元の地区（まとめた地区は複数）。公共データ利用規約の出典表示に使う
+        self.sources: list[dict] = report.get('sources') or []
+        self.title: str = report.get('title') or case
         self.load_seconds = time.perf_counter() - t0
 
     @classmethod
@@ -86,7 +88,8 @@ class PedestrianGraph:
         """テスト用。parquet を介さずに作る（links.geometry は WKB でも shapely でもよい）"""
         g = cls.__new__(cls)
         g.case = case
-        g.source = None
+        g.sources = []
+        g.title = case
         g._init(links, nodes)
         g.load_seconds = 0.0
         return g
@@ -279,7 +282,8 @@ class PedestrianGraph:
     def health(self) -> dict:
         return {
             'case': self.case,
-            'source': self.source,
+            'title': self.title,
+            'sources': self.sources,
             'links': self.n_links,
             'nodes': self.n_nodes,
             'floors': self.floors,
