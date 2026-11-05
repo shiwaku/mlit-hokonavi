@@ -1,0 +1,42 @@
+[project]
+name = "hokonavi-route-search"
+version = "0.1.0"
+description = "歩行空間ネットワークデータ（ほこナビDP）による歩行者経路探索（SvelteKit / FastAPI）"
+readme = "README.md"
+requires-python = ">=3.15"
+dependencies = [
+    "fastapi",
+    "numpy",
+    "orjson",
+    "pandas",
+    "pyarrow",
+    "scipy",
+    "shapely",
+    "uvicorn",
+]
+
+[dependency-groups]
+dev = [
+    "httpx2>=2.16.0",
+    "pytest",
+    "ruff",
+]
+
+[tool.uv]
+package = false
+required-version = ">=0.13.5"
+exclude-newer = "7 days"
+
+[tool.ruff]
+line-length = 120
+target-version = "py315"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.ruff.format]
+quote-style = "single"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

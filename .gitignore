@@ -1,0 +1,27 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.pytest_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv
+
+# ── データ（再生成可能）────────────────────
+# ※ gitignore は行末コメントを解釈しないので、必ず単独行に書く
+# ほこナビDP の原データ（カタログ・CSV）と整備仕様 PDF。preprocess/fetch_hokonavi.py で取り直せる
+input/
+# 生成したネットワーク（parquet・検査レポート）。preprocess/build_network.py で作り直せる
+network/
+*.pmtiles
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code の個人設定
+.claude/settings.local.json
