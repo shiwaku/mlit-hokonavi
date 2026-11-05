@@ -4,6 +4,17 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="text-scale" content="scale" />
+		<script>
+			// 描画の前にテーマを決め、明るい画面が一瞬出ないようにする（src/lib/theme.ts と同じ決め方）
+			(() => {
+				let t = null;
+				try {
+					t = localStorage.getItem('hokonavi-theme');
+				} catch {}
+				if (t !== 'light' && t !== 'dark') t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+				document.documentElement.dataset.theme = t;
+			})();
+		</script>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">

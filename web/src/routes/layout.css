@@ -1,2 +1,63 @@
 @import 'tailwindcss';
 @import 'maplibre-gl/dist/maplibre-gl.css';
+
+/* ダークは OS の設定ではなく <html data-theme="dark">（画面のボタン）で切り替える */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+:root {
+	color-scheme: light;
+}
+:root[data-theme='dark'] {
+	/* select などのフォーム部品もダークで描く */
+	color-scheme: dark;
+}
+body {
+	background: #ffffff;
+}
+:root[data-theme='dark'] body {
+	background: #0f172a;
+}
+
+/* ---- MapLibre のコントロール・出典表示・ポップアップ ---- */
+:root[data-theme='dark'] .maplibregl-ctrl-group {
+	background: #1e293b;
+}
+:root[data-theme='dark'] .maplibregl-ctrl-group button + button {
+	border-top-color: rgba(255, 255, 255, 0.12);
+}
+:root[data-theme='dark'] .maplibregl-ctrl-group button .maplibregl-ctrl-icon,
+:root[data-theme='dark'] .maplibregl-ctrl-attrib-button {
+	filter: invert(1);
+}
+:root[data-theme='dark'] .maplibregl-ctrl-attrib {
+	background: rgba(15, 23, 42, 0.85);
+	color: #cbd5e1;
+}
+:root[data-theme='dark'] .maplibregl-ctrl-attrib a {
+	color: #93c5fd;
+}
+:root[data-theme='dark'] .maplibregl-ctrl-scale {
+	background: rgba(15, 23, 42, 0.7);
+	border-color: #94a3b8;
+	color: #cbd5e1;
+}
+:root[data-theme='dark'] .maplibregl-popup-content {
+	background: #1e293b;
+	color: #e2e8f0;
+}
+:root[data-theme='dark'] .maplibregl-popup-anchor-top .maplibregl-popup-tip,
+:root[data-theme='dark'] .maplibregl-popup-anchor-top-left .maplibregl-popup-tip,
+:root[data-theme='dark'] .maplibregl-popup-anchor-top-right .maplibregl-popup-tip {
+	border-bottom-color: #1e293b;
+}
+:root[data-theme='dark'] .maplibregl-popup-anchor-bottom .maplibregl-popup-tip,
+:root[data-theme='dark'] .maplibregl-popup-anchor-bottom-left .maplibregl-popup-tip,
+:root[data-theme='dark'] .maplibregl-popup-anchor-bottom-right .maplibregl-popup-tip {
+	border-top-color: #1e293b;
+}
+:root[data-theme='dark'] .maplibregl-popup-anchor-left .maplibregl-popup-tip {
+	border-right-color: #1e293b;
+}
+:root[data-theme='dark'] .maplibregl-popup-anchor-right .maplibregl-popup-tip {
+	border-left-color: #1e293b;
+}

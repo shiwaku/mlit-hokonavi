@@ -13,6 +13,8 @@
 	import { attributionHtml, findRoute, getAreas, loadArea, type Area } from '#lib/data.ts';
 	import { floorLabel } from '#lib/routing/guidance.ts';
 	import type { AreaInfo } from '#lib/routing/types.ts';
+	import { applyBasemapTheme, basemapPaintTable, OVERLAY } from '#lib/basemap.ts';
+	import { applyTheme, initialTheme, type Theme } from '#lib/theme.ts';
 
 	// 地図の色。アクセス区分（0 通れる / 1 不明 / 2 片方向のみ / 3 通れない）
 	const ACCESS_COLOR = ['#64748b', '#f59e0b', '#8b5cf6', '#ef4444'];
@@ -39,6 +41,9 @@
 	let route = $state<Route | null>(null);
 	let error = $state<string | null>(null);
 	let activeStep = $state<number | null>(null);
+	// ライト / ダーク。app.html が描画前に <html data-theme> を決めているので、それに合わせて始める
+	let theme = $state<Theme>('light');
+	let paintTable: ReturnType<typeof basemapPaintTable> = [];
 	let ready = $state(false); // 地図のレイヤーを足し終えたか（map 自体は $state にしない）
 
 	let originMarker: maplibregl.Marker | undefined;
@@ -134,7 +139,8 @@
 		// area: 地区を切り替えるとネットワークのレイヤーを作り直すので、そのたびに塗り直す
 		if (!ready || !map || !area) return;
 		const acc: ExpressionSpecification = ['get', `acc_${profile}`];
-		map.setPaintProperty('network', 'line-color', ['match', acc, 1, ACCESS_COLOR[1], 2, ACCESS_COLOR[2], 3, ACCESS_COLOR[3], ACCESS_COLOR[0]]);
+		const base = OVERLAY[theme].network;
+		map.setPaintProperty('network', 'line-color', ['match', acc, 1, ACCESS_COLOR[1], 2, ACCESS_COLOR[2], 3, ACCESS_COLOR[3], base]);
 		map.setPaintProperty('network', 'line-dasharray', ['case', ['==', acc, 3], ['literal', [1, 1]], ['literal', [1, 0]]]);
 		const onFloor: ExpressionSpecification | boolean =
 			viewFloor === 'all'
@@ -203,7 +209,7 @@
 			'<table class="text-xs">' +
 			rows
 				.filter(([, v]) => v != null)
-				.map(([k, v]) => `<tr><th class="pr-2 text-left font-normal text-slate-500">${k}</th><td>${v}</td></tr>`)
+				.map(([k, v]) => `<tr><th class="pr-2 text-left font-normal text-slate-500 dark:text-slate-400">${k}</th><td>${v}</td></tr>`)
 				.join('') +
 			'</table>'
 		);
@@ -227,6 +233,25 @@
 			},
 			'route-casing'
 		);
+	}
+
+	// テーマ：背景地図の色と、自前のレイヤーの縁取り・薄い線の色を塗り替える（スタイルは差し替えない）
+	$effect(() => {
+		if (!ready || !map) return;
+		const o = OVERLAY[theme];
+		applyBasemapTheme(map, paintTable, theme);
+		map.setPaintProperty('route-casing', 'line-color', o.casing);
+		map.setPaintProperty('route', 'line-color', o.route);
+		map.setPaintProperty('snap', 'line-color', o.snap);
+		map.setPaintProperty('areas-point', 'circle-color', o.areaPoint);
+		map.setPaintProperty('areas-point', 'circle-stroke-color', o.halo);
+		map.setPaintProperty('areas-outline', 'line-color', o.areaPoint);
+		map.setPaintProperty('step-point', 'circle-stroke-color', o.halo);
+	});
+
+	function toggleTheme() {
+		theme = theme === 'dark' ? 'light' : 'dark';
+		applyTheme(theme);
 	}
 
 	/** 全地区が入るまで引く（青い点をクリックすると、その地区に切り替わる） */
@@ -260,6 +285,7 @@
 	}
 
 	onMount(async () => {
+		theme = document.documentElement.dataset.theme === 'dark' ? 'dark' : initialTheme();
 		maplibregl.setWorkerUrl(workerUrl);
 		maplibregl.addProtocol('pmtiles', protocol.tile);
 		map = new maplibregl.Map({
@@ -285,6 +311,8 @@
 		}
 		await mapLoaded;
 		const m = map;
+		// 背景スタイルの色を控える（自前のレイヤーを足す前に。ダークの値もここで作る）
+		paintTable = basemapPaintTable(m);
 
 		// 全地区の範囲（枠）と位置（点）。縮小しても地区が見つかるように
 		m.addSource('areas', {
@@ -399,22 +427,33 @@
 </script>
 
 <div class="flex h-dvh w-full flex-col md:flex-row">
-	<aside class="order-2 flex max-h-[50dvh] w-full flex-col overflow-hidden border-slate-200 bg-white md:order-1 md:max-h-none md:w-96 md:border-r">
-		<header class="border-b border-slate-200 px-4 py-3">
-			<h1 class="text-base font-bold text-slate-800">歩行者経路探索</h1>
-			<p class="text-xs text-slate-500">
+	<aside class="order-2 flex max-h-[50dvh] w-full flex-col overflow-hidden border-slate-200 bg-white md:order-1 md:max-h-none md:w-96 md:border-r dark:border-slate-700 dark:bg-slate-900">
+		<header class="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+			<div class="flex items-center justify-between">
+				<h1 class="text-base font-bold text-slate-800 dark:text-slate-100">歩行者経路探索</h1>
+				<button
+					type="button"
+					class="rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+					onclick={toggleTheme}
+					aria-label={theme === 'dark' ? 'ライトモードにする' : 'ダークモードにする'}
+					title={theme === 'dark' ? 'ライトモードにする' : 'ダークモードにする'}
+				>
+					{theme === 'dark' ? '☀️ ライト' : '🌙 ダーク'}
+				</button>
+			</div>
+			<p class="text-xs text-slate-500 dark:text-slate-400">
 				ほこナビDP の歩行空間ネットワークデータ（{areas.length || '–'}地区）
 			</p>
 		</header>
 
 		<div class="space-y-3 overflow-y-auto px-4 py-3">
 			<div class="block">
-				<span class="mb-1 flex items-center justify-between text-xs font-semibold text-slate-600">
+				<span class="mb-1 flex items-center justify-between text-xs font-semibold text-slate-600 dark:text-slate-300">
 					地区
-					<button type="button" class="rounded border border-slate-300 px-1.5 py-0.5 font-normal hover:bg-slate-50" onclick={showAllAreas}>全地区を表示</button>
+					<button type="button" class="rounded border border-slate-300 px-1.5 py-0.5 font-normal hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800" onclick={showAllAreas}>全地区を表示</button>
 				</span>
 				<select
-					class="w-full rounded border border-slate-300 px-2 py-1 text-sm"
+					class="w-full rounded border border-slate-300 px-2 py-1 text-sm dark:border-slate-600"
 					aria-label="地区"
 					value={areaCase}
 					disabled={loadingArea}
@@ -424,87 +463,87 @@
 						<option value={a.case}>{a.title}（{a.links.toLocaleString()}リンク）</option>
 					{/each}
 				</select>
-				<span class="mt-0.5 block text-[10px] text-slate-400">
+				<span class="mt-0.5 block text-[10px] text-slate-400 dark:text-slate-500">
 					{#if loadingArea}読み込み中…{:else if area}{area.links.toLocaleString()}リンク・{areas.find((a) => a.case === areaCase)?.data_updated ?? '–'} 更新。地図の青い枠・点をクリックしても切り替わります{/if}
 				</span>
 			</div>
 
 			{#if loadError}
-				<p class="rounded bg-red-50 p-2 text-sm text-red-700">データを読めません: {loadError}</p>
+				<p class="rounded bg-red-50 p-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-200">データを読めません: {loadError}</p>
 			{/if}
 
 			<fieldset>
-				<legend class="mb-1 text-xs font-semibold text-slate-600">利用者</legend>
+				<legend class="mb-1 text-xs font-semibold text-slate-600 dark:text-slate-300">利用者</legend>
 				<div class="grid grid-cols-4 gap-1">
 					{#each profiles as p (p.key)}
 						<button
 							type="button"
 							class="rounded border px-1 py-1.5 text-sm {profile === p.key
 								? 'border-blue-600 bg-blue-600 text-white'
-								: 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'}"
+								: 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800'}"
 							onclick={() => ((profile = p.key), search())}>{p.label}</button
 						>
 					{/each}
 				</div>
 				{#if currentProfile}
-					<p class="mt-1 text-xs text-slate-500">{currentProfile.description}</p>
+					<p class="mt-1 text-xs text-slate-500 dark:text-slate-400">{currentProfile.description}</p>
 				{/if}
 			</fieldset>
 
 			<div class="grid grid-cols-[auto_1fr_auto] items-center gap-x-2 gap-y-1 text-sm">
 				<span class="grid h-5 w-5 place-items-center rounded-full bg-green-600 text-[10px] font-bold text-white">発</span>
-				<span class="truncate text-slate-700">{origin ? `${origin[1].toFixed(5)}, ${origin[0].toFixed(5)}` : '地図をクリック'}</span>
-				<select class="rounded border border-slate-300 px-1 py-0.5 text-xs" bind:value={fromFloor} onchange={search} aria-label="出発地の階">
+				<span class="truncate text-slate-700 dark:text-slate-200">{origin ? `${origin[1].toFixed(5)}, ${origin[0].toFixed(5)}` : '地図をクリック'}</span>
+				<select class="rounded border border-slate-300 px-1 py-0.5 text-xs dark:border-slate-600" bind:value={fromFloor} onchange={search} aria-label="出発地の階">
 					<option value={null}>階の指定なし</option>
 					{#each floors as f (f)}<option value={f}>{floorLabel(f)}</option>{/each}
 				</select>
 				<span class="grid h-5 w-5 place-items-center rounded-full bg-red-600 text-[10px] font-bold text-white">着</span>
-				<span class="truncate text-slate-700">{dest ? `${dest[1].toFixed(5)}, ${dest[0].toFixed(5)}` : origin ? '地図をクリック' : '–'}</span>
-				<select class="rounded border border-slate-300 px-1 py-0.5 text-xs" bind:value={toFloor} onchange={search} aria-label="目的地の階">
+				<span class="truncate text-slate-700 dark:text-slate-200">{dest ? `${dest[1].toFixed(5)}, ${dest[0].toFixed(5)}` : origin ? '地図をクリック' : '–'}</span>
+				<select class="rounded border border-slate-300 px-1 py-0.5 text-xs dark:border-slate-600" bind:value={toFloor} onchange={search} aria-label="目的地の階">
 					<option value={null}>階の指定なし</option>
 					{#each floors as f (f)}<option value={f}>{floorLabel(f)}</option>{/each}
 				</select>
 			</div>
 			<div class="flex gap-2">
-				<button type="button" class="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-40" disabled={!origin || !dest} onclick={swap}>入れ替え</button>
-				<button type="button" class="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50" onclick={clearAll}>クリア</button>
+				<button type="button" class="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-40 dark:border-slate-600 dark:hover:bg-slate-800" disabled={!origin || !dest} onclick={swap}>入れ替え</button>
+				<button type="button" class="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800" onclick={clearAll}>クリア</button>
 			</div>
 
 			{#if error}
-				<p class="rounded bg-red-50 p-2 text-sm text-red-700">{error}</p>
+				<p class="rounded bg-red-50 p-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-200">{error}</p>
 			{/if}
 
 			{#if route?.unreachable_reason}
-				<p class="rounded bg-amber-50 p-2 text-sm text-amber-800">{route.unreachable_reason}</p>
+				<p class="rounded bg-amber-50 p-2 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">{route.unreachable_reason}</p>
 			{:else if route?.summary}
 				{@const s = route.summary}
-				<section class="rounded border border-slate-200 p-3">
+				<section class="rounded border border-slate-200 p-3 dark:border-slate-700">
 					<div class="flex items-baseline gap-3">
-						<span class="text-2xl font-bold text-slate-800">{formatDuration(s.time_s)}</span>
-						<span class="text-sm text-slate-600">{Math.round(s.dist_m).toLocaleString()} m</span>
-						<span class="ml-auto text-[10px] text-slate-400">{route.elapsed_ms} ms</span>
+						<span class="text-2xl font-bold text-slate-800 dark:text-slate-100">{formatDuration(s.time_s)}</span>
+						<span class="text-sm text-slate-600 dark:text-slate-300">{Math.round(s.dist_m).toLocaleString()} m</span>
+						<span class="ml-auto text-[10px] text-slate-400 dark:text-slate-500">{route.elapsed_ms} ms</span>
 					</div>
-					<p class="mt-1 text-xs text-slate-600">
+					<p class="mt-1 text-xs text-slate-600 dark:text-slate-300">
 						階段 {s.stairs}・エレベーター {s.elevator}・エスカレーター {s.escalator}・横断歩道 {s.crosswalk}・横断 {s.crossing}
 					</p>
 					{#each route.warnings as w (w)}
-						<p class="mt-2 rounded bg-amber-50 p-2 text-xs text-amber-800">{w}</p>
+						<p class="mt-2 rounded bg-amber-50 p-2 text-xs text-amber-800 dark:bg-amber-950 dark:text-amber-200">{w}</p>
 					{/each}
 				</section>
 
-				<ol class="divide-y divide-slate-100">
+				<ol class="divide-y divide-slate-100 dark:divide-slate-800">
 					{#each route.steps as st, i (i)}
 						<li>
 							<button
 								type="button"
-								class="flex w-full gap-2 px-1 py-2 text-left text-sm {activeStep === i ? 'bg-orange-50' : 'hover:bg-slate-50'}"
+								class="flex w-full gap-2 px-1 py-2 text-left text-sm {activeStep === i ? 'bg-orange-50 dark:bg-orange-950' : 'hover:bg-slate-50 dark:hover:bg-slate-800'}"
 								onmouseenter={() => (activeStep = i)}
 								onclick={() => focusStep(i)}
 							>
-								<span class="w-5 shrink-0 text-right text-xs text-slate-400">{i + 1}</span>
-								<span class="flex-1 text-slate-800">{st.instruction}</span>
+								<span class="w-5 shrink-0 text-right text-xs text-slate-400 dark:text-slate-500">{i + 1}</span>
+								<span class="flex-1 text-slate-800 dark:text-slate-100">{st.instruction}</span>
 								{#if st.floor_from != null && st.floor_from !== 0}
-									<span class="shrink-0 text-xs text-slate-500">{floorLabel(st.floor_from)}</span>
+									<span class="shrink-0 text-xs text-slate-500 dark:text-slate-400">{floorLabel(st.floor_from)}</span>
 								{/if}
 							</button>
 						</li>
@@ -512,20 +551,20 @@
 				</ol>
 			{/if}
 
-			<fieldset class="border-t border-slate-200 pt-3">
-				<legend class="mb-1 text-xs font-semibold text-slate-600">表示する階</legend>
-				<select class="w-full rounded border border-slate-300 px-2 py-1 text-sm" bind:value={viewFloor}>
+			<fieldset class="border-t border-slate-200 pt-3 dark:border-slate-700">
+				<legend class="mb-1 text-xs font-semibold text-slate-600 dark:text-slate-300">表示する階</legend>
+				<select class="w-full rounded border border-slate-300 px-2 py-1 text-sm dark:border-slate-600" bind:value={viewFloor}>
 					<option value="all">すべて</option>
 					{#each floors as f (f)}<option value={f}>{floorLabel(f)}</option>{/each}
 				</select>
-				<ul class="mt-2 grid grid-cols-2 gap-1 text-xs text-slate-600">
+				<ul class="mt-2 grid grid-cols-2 gap-1 text-xs text-slate-600 dark:text-slate-300">
 					{#each ['通れる', '属性が不明', '片方向のみ', '通れない'] as label, i (label)}
 						<li class="flex items-center gap-1">
 							<span class="inline-block h-1 w-5 rounded" style="background:{ACCESS_COLOR[i]}"></span>{label}
 						</li>
 					{/each}
 				</ul>
-				<p class="mt-1 text-[10px] text-slate-400">ネットワークの色は、選んだ利用者で通れるかどうか</p>
+				<p class="mt-1 text-[10px] text-slate-400 dark:text-slate-500">ネットワークの色は、選んだ利用者で通れるかどうか</p>
 			</fieldset>
 		</div>
 	</aside>

@@ -64,6 +64,11 @@
 
 画面では、地区を選ぶ（リスト・地図の青い枠や点をクリック）と、その地区のデータだけを読む。地区をまたぐ経路は探さない。
 
+画面はライト / ダークを切り替えられる（右上の 🌙 / ☀️。初回は OS の設定に合わせ、切り替えたらブラウザに覚える）。
+ダークの背景地図は [shiwaku/japan-food-store-master の viewer](https://github.com/shiwaku/japan-food-store-master/tree/main/viewer) と同じく、
+淡色地図スタイルの色の**明度だけを反転**して作る（色相は保ち、彩度を 85 % に）。ただしスタイルは差し替えず、
+背景レイヤーの色を `setPaintProperty` で塗り替える（`web/src/lib/basemap.ts`）。経路などのレイヤーを貼り直さずに済み、表示中の経路も残る。
+
 ---
 
 ## 分析上の前提
@@ -145,6 +150,8 @@
 | `router.ts` | `api/graph.py` と同じスナップ（成分ごとに最寄り・半径を広げる）と Dijkstra（二分ヒープ） |
 | `guidance.ts` | `api/guidance.py` と同じ区切り方・文言・丸め方（Python の偶数丸めも再現） |
 | `parity.test.ts` | Python と同じ結果か（vitest） |
+
+`web/src/lib/basemap.ts`（背景地図のダーク化）・`theme.ts`（ライト / ダークの切り替えと保存）
 
 ---
 
