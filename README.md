@@ -195,6 +195,20 @@ uv run python -m tests.test_parity --real-all
 
 CI（`.github/workflows/ci.yml`）でも同じものを回す。テストは合成データだけを使うので、実データは要らない。
 
+### 紹介動画の録画
+
+`web/scripts/promo.ts` が Playwright で画面を操作して録画し、ffmpeg で MP4（ダークモード・1920×1080・約 66 秒・H.264・音声なし）にする。
+地図は開発サーバーだけが出す `window.__map` で操作するので、先に `pnpm dev` を立ち上げておく。
+
+```bash
+cd web && pnpm dev                       # 別の端末で
+pnpm exec playwright-core install chromium   # 初回だけ（CHROME_PATH で手元の Chromium を指してもよい）
+pnpm promo                               # → web/promo/hokonavi-promo-dark.mp4（git には入れない）
+```
+
+環境変数：`PROMO_URL`（既定 `http://localhost:5173/`）・`CHROME_PATH`・`FFMPEG`（既定 `ffmpeg`）。
+字幕の文言・場面の順番・待ち時間は `promo.ts` の `main()` に並んでいる。
+
 ---
 
 ## 今後

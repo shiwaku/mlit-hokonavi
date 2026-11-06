@@ -298,6 +298,8 @@
 		});
 		// load は 1 回しか来ない。データを待っている間に来ても取りこぼさないよう、先に待ち受ける
 		const mapLoaded = new Promise((r) => map!.once('load', r));
+		// 紹介動画の録画（web/scripts/promo.ts）が地図を操作するための入口。開発サーバーのときだけ置く
+		if (import.meta.env.DEV) (window as unknown as { __map?: maplibregl.Map }).__map = map;
 		map.addControl(new maplibregl.NavigationControl(), 'top-right');
 		map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-right');
 

@@ -25,3 +25,6 @@ Thumbs.db
 
 # Claude Code の個人設定
 .claude/settings.local.json
+
+# 紹介動画の出力（web/scripts/promo.ts。pnpm promo で作り直せる）
+promo/
