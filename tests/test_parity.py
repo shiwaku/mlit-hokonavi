@@ -39,6 +39,7 @@ def route_body(g: PedestrianGraph, q: dict) -> tuple[dict, float | None]:
         'snap': {'origin': _snap_json(snap.get('origin')), 'dest': _snap_json(snap.get('dest'))},
         'unreachable_reason': r['unreachable_reason'],
         'geometry': None,
+        'floor_path': None,
         'summary': None,
         'steps': [],
         'warnings': [],
@@ -87,11 +88,15 @@ def real_cases(case: str, n: int = 200, seed: int = 1) -> dict:
     g = PedestrianGraph(case)
     rng = random.Random(seed)
     lat, lon = g.nodes['lat'].to_numpy(), g.nodes['lon'].to_numpy()
+    floor = g.nodes['floor'].to_numpy()
     cases = []
     for _ in range(n):
         i, j = rng.randrange(g.n_nodes), rng.randrange(g.n_nodes)
         jitter = lambda: rng.uniform(-0.0002, 0.0002)  # noqa: E731  約 20 m
         query = q((lat[i] + jitter(), lon[i] + jitter()), (lat[j] + jitter(), lon[j] + jitter()), rng.choice(PROFILES))
+        # 半分は階を指定する（屋内の地下・上階に寄せる場合も比べる）
+        if rng.random() < 0.5 and floor[i] == floor[i] and floor[j] == floor[j]:
+            query.update(from_floor=float(floor[i]), to_floor=float(floor[j]))
         cases.append(case_of(g, query))
     return {'name': case, 'graph': static_graph(g), 'cases': cases}
 

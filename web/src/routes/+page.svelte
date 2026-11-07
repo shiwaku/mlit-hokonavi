@@ -15,9 +15,11 @@
 	import type { AreaInfo } from '#lib/routing/types.ts';
 	import { applyBasemapTheme, basemapPaintTable, OVERLAY } from '#lib/basemap.ts';
 	import { applyTheme, initialTheme, type Theme } from '#lib/theme.ts';
+	import { createOverlay, layers as layers3d } from '#lib/view3d.ts';
 
-	// 地図の色。アクセス区分（0 通れる / 1 不明 / 2 片方向のみ / 3 通れない）
-	const ACCESS_COLOR = ['#64748b', '#f59e0b', '#8b5cf6', '#ef4444'];
+	// 地図の色。アクセス区分（0 通れる / 1 不明 / 2 片方向のみ / 3 通れない）。0 はテーマの色
+	const ACCESS_COLOR = ['#0d9488', '#f59e0b', '#8b5cf6', '#ef4444'];
+	const accessColors = (t: Theme) => [OVERLAY[t].network, ...ACCESS_COLOR.slice(1)];
 	const ROUTE_COLOR = '#2563eb';
 	const EMPTY: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
 
@@ -45,6 +47,14 @@
 	let theme = $state<Theme>('light');
 	let paintTable: ReturnType<typeof basemapPaintTable> = [];
 	let ready = $state(false); // 地図のレイヤーを足し終えたか（map 自体は $state にしない）
+	// 3D 表示（階の高さに持ち上げて描く）。高さは「1 階分 × 強調倍率」の仮の値（#lib/view3d.ts）
+	let view3d = $state(true); // 既定は 3D
+	let exaggeration = $state(2);
+	let overlay: ReturnType<typeof createOverlay> | undefined;
+	// 3D のときは、地図の 2D の線（ネットワーク・経路・ステップ）を隠して deck.gl の線に任せる。
+	// ネットワークは非表示にすると出典表示（ソースの attribution）まで消えるので、何も描かない filter で隠す
+	const LAYERS_2D = ['route-glow', 'route-casing', 'route', 'step-line', 'step-point'];
+	const HIDE_ALL: maplibregl.FilterSpecification = ['==', ['get', 'link_id'], ''];
 
 	let originMarker: maplibregl.Marker | undefined;
 	let destMarker: maplibregl.Marker | undefined;
@@ -140,13 +150,14 @@
 		if (!ready || !map || !area) return;
 		const acc: ExpressionSpecification = ['get', `acc_${profile}`];
 		const base = OVERLAY[theme].network;
-		map.setPaintProperty('network', 'line-color', ['match', acc, 1, ACCESS_COLOR[1], 2, ACCESS_COLOR[2], 3, ACCESS_COLOR[3], base]);
+		const color: ExpressionSpecification = ['match', acc, 1, ACCESS_COLOR[1], 2, ACCESS_COLOR[2], 3, ACCESS_COLOR[3], base];
+		map.setPaintProperty('network', 'line-color', color);
 		map.setPaintProperty('network', 'line-dasharray', ['case', ['==', acc, 3], ['literal', [1, 1]], ['literal', [1, 0]]]);
 		const onFloor: ExpressionSpecification | boolean =
 			viewFloor === 'all'
 				? true
 				: ['any', ['==', ['get', 'floor'], viewFloor], ['==', ['get', 'floor_end'], viewFloor]];
-		map.setPaintProperty('network', 'line-opacity', ['case', onFloor, 0.9, 0.12]);
+		map.setPaintProperty('network', 'line-opacity', ['case', onFloor, 0.95, 0.12]);
 	});
 
 	$effect(() => {
@@ -231,9 +242,44 @@
 				source: 'network',
 				paint: { 'line-color': ACCESS_COLOR[0], 'line-width': ['interpolate', ['linear'], ['zoom'], 12, 1, 14, 1.8, 18, 4] }
 			},
-			'route-casing'
+			'route-glow'
 		);
 	}
+
+	// 3D 表示：オン・オフで視点を傾け、2D の線と deck.gl の線を入れ替える
+	$effect(() => {
+		if (!ready || !map) return;
+		const on = view3d;
+		for (const id of LAYERS_2D) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', on ? 'none' : 'visible');
+		if (map.getLayer('network')) map.setFilter('network', on ? HIDE_ALL : null);
+		if (on && !overlay) {
+			overlay = createOverlay();
+			map.addControl(overlay);
+			map.easeTo({ pitch: 60, duration: 600 });
+		} else if (!on && overlay) {
+			map.removeControl(overlay);
+			overlay = undefined;
+			map.easeTo({ pitch: 0, bearing: 0, duration: 600 });
+		}
+	});
+
+	$effect(() => {
+		if (!ready || !map || !view3d || !overlay) return;
+		const o = OVERLAY[theme];
+		overlay.setProps({
+			layers: layers3d({
+				network: area?.network ?? null,
+				route,
+				profile,
+				viewFloor,
+				exaggeration,
+				theme,
+				accessColor: accessColors(theme),
+				routeColor: o.route,
+				casingColor: o.casing
+			})
+		});
+	});
 
 	// テーマ：背景地図の色と、自前のレイヤーの縁取り・薄い線の色を塗り替える（スタイルは差し替えない）
 	$effect(() => {
@@ -242,6 +288,7 @@
 		applyBasemapTheme(map, paintTable, theme);
 		map.setPaintProperty('route-casing', 'line-color', o.casing);
 		map.setPaintProperty('route', 'line-color', o.route);
+		map.setPaintProperty('route-glow', 'line-color', o.route);
 		map.setPaintProperty('snap', 'line-color', o.snap);
 		map.setPaintProperty('areas-point', 'circle-color', o.areaPoint);
 		map.setPaintProperty('areas-point', 'circle-stroke-color', o.halo);
@@ -275,6 +322,7 @@
 			area = a;
 			areaCase = c;
 			showNetwork(map, a);
+			if (view3d) map.setFilter('network', HIDE_ALL);
 			const info = areas.find((x) => x.case === c);
 			if (fit && info) map.fitBounds(info.bbox, { padding: 40, duration: 600 });
 		} catch (e) {
@@ -349,6 +397,19 @@
 		m.addSource('route', { type: 'geojson', data: EMPTY });
 		m.addSource('snap', { type: 'geojson', data: EMPTY });
 		m.addSource('step', { type: 'geojson', data: EMPTY });
+		// 経路の発光：太くぼかした線を下に敷く
+		m.addLayer({
+			id: 'route-glow',
+			type: 'line',
+			source: 'route',
+			layout: { 'line-cap': 'round', 'line-join': 'round' },
+			paint: {
+				'line-color': ROUTE_COLOR,
+				'line-width': ['interpolate', ['linear'], ['zoom'], 14, 18, 18, 44],
+				'line-blur': ['interpolate', ['linear'], ['zoom'], 14, 10, 18, 24],
+				'line-opacity': 0.55
+			}
+		});
 		m.addLayer({
 			id: 'route-casing',
 			type: 'line',
@@ -555,6 +616,14 @@
 
 			<fieldset class="border-t border-slate-200 pt-3 dark:border-slate-700">
 				<legend class="mb-1 text-xs font-semibold text-slate-600 dark:text-slate-300">表示する階</legend>
+				<div class="mb-2 flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+					<label class="flex items-center gap-1"><input type="checkbox" bind:checked={view3d} />3D で表示</label>
+					{#if view3d}
+						<label class="flex flex-1 items-center gap-1"
+							>高さ ×{exaggeration}<input class="flex-1" type="range" min="1" max="5" step="1" bind:value={exaggeration} aria-label="高さの強調" /></label
+						>
+					{/if}
+				</div>
 				<select class="w-full rounded border border-slate-300 px-2 py-1 text-sm dark:border-slate-600" bind:value={viewFloor}>
 					<option value="all">すべて</option>
 					{#each floors as f (f)}<option value={f}>{floorLabel(f)}</option>{/each}
@@ -562,11 +631,16 @@
 				<ul class="mt-2 grid grid-cols-2 gap-1 text-xs text-slate-600 dark:text-slate-300">
 					{#each ['通れる', '属性が不明', '片方向のみ', '通れない'] as label, i (label)}
 						<li class="flex items-center gap-1">
-							<span class="inline-block h-1 w-5 rounded" style="background:{ACCESS_COLOR[i]}"></span>{label}
+							<span class="inline-block h-1 w-5 rounded" style="background:{accessColors(theme)[i]}"></span>{label}
 						</li>
 					{/each}
 				</ul>
 				<p class="mt-1 text-[10px] text-slate-400 dark:text-slate-500">ネットワークの色は、選んだ利用者で通れるかどうか</p>
+				{#if view3d}
+					<p class="mt-1 text-[10px] text-slate-400 dark:text-slate-500">
+						3D の高さは階 × 4 m × 強調倍率（表示用の仮の値。データに高さは無い）。右ドラッグ・Ctrl＋ドラッグで傾き・向きを変えられます
+					</p>
+				{/if}
 			</fieldset>
 		</div>
 	</aside>

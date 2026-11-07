@@ -65,6 +65,8 @@ export interface Route {
 	snap: { origin: SnapPoint | null; dest: SnapPoint | null };
 	unreachable_reason: string | null;
 	geometry: GeoJSON.LineString | null;
+	/** 3D 表示用の [経度, 緯度, 階]。地点か階が変わるたびに 1 点（エレベーターの昇降も点になる） */
+	floor_path: [number, number, number | null][] | null;
 	summary: {
 		dist_m: number;
 		time_s: number;

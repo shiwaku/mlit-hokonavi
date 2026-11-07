@@ -98,6 +98,7 @@ export function buildRoute(router: Router, r: RouteResult, profile: ProfileKey):
 		snap: { origin: snapJson(r.snap?.origin ?? null), dest: snapJson(r.snap?.dest ?? null) },
 		unreachable_reason: r.unreachable_reason,
 		geometry: null,
+		floor_path: null,
 		summary: null,
 		steps: [],
 		warnings: [],
@@ -106,6 +107,9 @@ export function buildRoute(router: Router, r: RouteResult, profile: ProfileKey):
 	if (r.unreachable_reason != null) return base;
 
 	const coords: [number, number][] = [];
+	// 3D 表示用の [経度, 緯度, 階]。coords は同じ地点を 1 点にまとめるのでエレベーターの昇降が消える。
+	// こちらは地点か階が変わるたびに点を足す（api/guidance.py と同じ）
+	const floorPath: [number, number, number | null][] = [];
 	const steps: WorkStep[] = [];
 	let prevBearing: number | null = null;
 	let totalD = 0, totalT = 0, unknownLinks = 0;
@@ -135,6 +139,10 @@ export function buildRoute(router: Router, r: RouteResult, profile: ProfileKey):
 		if (last != null && SPLIT_ON_TURN.has(kind) && SPLIT_ON_TURN.has(last.kind) && d < MIN_STEP_M) same = true;
 		if (!coords.length) coords.push(a);
 		if (!sameXY(coords[coords.length - 1], b)) coords.push(b);
+		for (const pt of [[a[0], a[1], fFrom], [b[0], b[1], fTo]] as [number, number, number | null][]) {
+			const q = floorPath[floorPath.length - 1];
+			if (!q || !sameXY([q[0], q[1]], [pt[0], pt[1]]) || q[2] !== pt[2]) floorPath.push(pt);
+		}
 		if (same && last) {
 			last.dist_m += d;
 			last.time_s += t;
@@ -208,6 +216,7 @@ export function buildRoute(router: Router, r: RouteResult, profile: ProfileKey):
 	return {
 		...base,
 		geometry: { type: 'LineString', coordinates: coords.map(([x, y]) => [pyRound(x, 7), pyRound(y, 7)]) },
+		floor_path: floorPath.map(([x, y, f]) => [pyRound(x, 7), pyRound(y, 7), f]),
 		summary: { dist_m: pyRound(totalD, 1), time_s: pyRound(totalT), link_count: r.pieces.length, ...counts },
 		steps: out,
 		warnings
