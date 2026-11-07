@@ -17,6 +17,13 @@ body {
 :root[data-theme='dark'] body {
 	background: #0f172a;
 }
+/* color-scheme だけだと、Windows の Chrome では開いた選択肢の一覧が白地のまま（文字は明るい色）になり読めない。
+   select と option の背景・文字色を明示する */
+:root[data-theme='dark'] select,
+:root[data-theme='dark'] option {
+	background-color: #0f172a;
+	color: #e2e8f0;
+}
 
 /* ---- MapLibre のコントロール・出典表示・ポップアップ ---- */
 :root[data-theme='dark'] .maplibregl-ctrl-group {
