@@ -51,6 +51,8 @@
 	let view3d = $state(true); // 既定は 3D
 	let exaggeration = $state(2);
 	let overlay: ReturnType<typeof createOverlay> | undefined;
+	// URL の hash（#ズーム/緯度/経度/向き/傾き）で開いたときは、その視点を保つ（最初の地区に寄せたり、3D で傾けたりしない）
+	let keepHashView = false;
 	// 3D のときは、地図の 2D の線（ネットワーク・経路・ステップ）を隠して deck.gl の線に任せる。
 	// ネットワークは非表示にすると出典表示（ソースの attribution）まで消えるので、何も描かない filter で隠す
 	const LAYERS_2D = ['route-glow', 'route-casing', 'route', 'step-line', 'step-point'];
@@ -255,7 +257,8 @@
 		if (on && !overlay) {
 			overlay = createOverlay();
 			map.addControl(overlay);
-			map.easeTo({ pitch: 60, duration: 600 });
+			if (!keepHashView) map.easeTo({ pitch: 60, duration: 600 });
+			keepHashView = false;
 		} else if (!on && overlay) {
 			map.removeControl(overlay);
 			overlay = undefined;
@@ -335,6 +338,7 @@
 	onMount(async () => {
 		theme = document.documentElement.dataset.theme === 'dark' ? 'dark' : initialTheme();
 		maplibregl.setWorkerUrl(workerUrl);
+		keepHashView = /^#[\d.]+\/-?[\d.]+\/-?[\d.]+/.test(location.hash);
 		maplibregl.addProtocol('pmtiles', protocol.tile);
 		map = new maplibregl.Map({
 			container: mapEl,
@@ -342,6 +346,9 @@
 			style: new URL(asset('styles/pale.json'), location.href).href,
 			center: [139.7, 35.69],
 			zoom: 15,
+			maxPitch: 85,
+			// 視点を URL の hash に書く（共有・再読み込みで同じ視点に戻る）
+			hash: true,
 			attributionControl: { compact: true }
 		});
 		// load は 1 回しか来ない。データを待っている間に来ても取りこぼさないよう、先に待ち受ける
@@ -474,7 +481,12 @@
 		});
 		m.on('click', onMapClick);
 		ready = true;
-		if (first) {
+		if (keepHashView) {
+			// hash の視点の中心を含む地区を開く（無ければ既定の地区。視点は動かさない）
+			const c = m.getCenter();
+			first = areas.find((a) => inBbox(a.bbox, [c.lng, c.lat], 0.003))?.case ?? first;
+			if (first) await selectArea(first, false);
+		} else if (first) {
 			const info = areas.find((x) => x.case === first);
 			if (info) m.fitBounds(info.bbox, { padding: 40, duration: 0 });
 			await selectArea(first, false);
