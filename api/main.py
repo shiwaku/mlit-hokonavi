@@ -119,6 +119,7 @@ def route(
         'snap': {'origin': _snap_json(snap.get('origin')), 'dest': _snap_json(snap.get('dest'))},
         'unreachable_reason': r['unreachable_reason'],
         'geometry': None,
+        'floor_path': None,
         'summary': None,
         'steps': [],
         'warnings': [],

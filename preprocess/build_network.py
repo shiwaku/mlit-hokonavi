@@ -50,6 +50,7 @@ from scipy.sparse.csgraph import connected_components
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from api.codes import LINK_CODE_COLUMNS, MISSING  # noqa: E402
+from preprocess import indoor as I  # noqa: E402
 
 BASE = Path(__file__).resolve().parent.parent
 RAW = BASE / 'input' / 'hokonavi'
@@ -225,8 +226,9 @@ def _updated(report: dict) -> str:
     return (report.get('source') or {}).get('data_updated') or '0000/00/00'
 
 
-def build(datasets: list[str]) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
-    """1 つ以上の地区を 1 つのネットワークにする。重複はリンク・ノードとも最も新しい地区のものを採る"""
+def build(datasets: list[str], indoor: list[str] = ()) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
+    """1 つ以上の地区を 1 つのネットワークにする。重複はリンク・ノードとも最も新しい地区のものを採る。
+    indoor に屋内地図オープンデータ（input/indoor/）を挙げると、座標と階で屋外につないで足す（preprocess/indoor.py）"""
     loaded = sorted((load(d) for d in datasets), key=lambda x: _updated(x[2]), reverse=True)
     links = pd.concat([x[0] for x in loaded], ignore_index=True).drop_duplicates('link_id', keep='first')
     nodes = pd.concat([x[1] for x in loaded], ignore_index=True).drop_duplicates('node_id', keep='first')
@@ -250,7 +252,15 @@ def build(datasets: list[str]) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
     used = set(links['start_id']) | set(links['end_id'])
     unused = ~nodes['node_id'].isin(used)
     report['dropped_unused_nodes'] = int(unused.sum())
-    return finalize(links, nodes[~unused], report)
+    nodes = nodes[~unused]
+    report['indoor'] = []
+    for d in indoor:
+        il, inn, r = I.load(d)
+        links, nodes, st = I.attach(links, nodes, il, inn)
+        report['indoor'].append({**{k: r[k] for k in ('dataset', 'input', 'dropped')}, **st})
+        if r['source']:
+            report['sources'].append(r['source'])
+    return finalize(links, nodes, report)
 
 
 def clusters(datasets: list[str]) -> list[list[str]]:
@@ -322,7 +332,9 @@ def main() -> None:
     areas = []
     for g in groups:
         case = (None if args.all else args.case) or g[0].removeprefix('nwd_')
-        links, nodes, report = build(g)
+        # 屋内地図オープンデータは、取得済み（preprocess/fetch_indoor.py）のものだけ足す
+        indoor = [d for d, c in I.INDOOR_CASE.items() if c == case and (I.RAW / d / 'nw').is_dir()]
+        links, nodes, report = build(g, indoor)
         report['title'] = area_title(report)
         write(case, links, nodes, report)
         lon, lat = nodes['lon'], nodes['lat']
@@ -341,6 +353,12 @@ def main() -> None:
             f'成分 {c["count"]:3}  {report["title"]}',
             file=sys.stderr,
         )
+        for r in report['indoor']:
+            print(
+                f'{"":28} ＋ {r["dataset"]}: リンク {r["links_added"]:,} を追加'
+                f'（{r["merged_nodes"]} ノードで屋外とつなぐ）',
+                file=sys.stderr,
+            )
     if args.all:
         (NET / 'areas.json').write_text(json.dumps(areas, ensure_ascii=False, indent=1), encoding='utf-8')
 

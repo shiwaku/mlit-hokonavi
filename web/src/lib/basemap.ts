@@ -106,6 +106,6 @@ export function applyBasemapTheme(map: MapLibreMap, table: PaintTable, theme: Th
 
 /** 自前のレイヤー（ネットワーク・経路など）の配色。ダークでは背景から浮くよう明るめ・縁取りは暗く */
 export const OVERLAY = {
-	light: { network: '#64748b', route: '#2563eb', casing: '#ffffff', snap: '#334155', areaPoint: '#2563eb', halo: '#ffffff' },
-	dark: { network: '#94a3b8', route: '#3b82f6', casing: '#0b1220', snap: '#cbd5e1', areaPoint: '#60a5fa', halo: '#0b1220' }
+	light: { network: '#0d9488', route: '#2563eb', casing: '#ffffff', snap: '#334155', areaPoint: '#2563eb', halo: '#ffffff' },
+	dark: { network: '#2dd4bf', route: '#60a5fa', casing: '#0b1220', snap: '#cbd5e1', areaPoint: '#60a5fa', halo: '#0b1220' }
 } as const;

@@ -49,14 +49,23 @@ export async function loadArea(c: string): Promise<Area> {
 	};
 }
 
-/** 公共データ利用規約（第1.0版）の出典表示。まとめた地区は元の地区を全部並べ、加工している旨も書く */
+/** 出典表示。まとめた地区は元の地区を全部並べ、加工している旨も書く。
+ * 利用規約ごとに分けて並べる（ほこナビDP は公共データ利用規約、屋内地図オープンデータはデータセットごとの利用規約） */
 export function attributionHtml(sources: Source[]): string {
 	if (!sources.length) return '';
 	const esc = (t: string) => t.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
-	const titles = sources.map((s) => `「<a href="${s.url}" target="_blank" rel="noopener">${esc(s.title)}</a>」`).join('');
-	const pubs = [...new Set(sources.map((s) => s.publisher).filter(Boolean))].join('・');
-	const lic = sources[0];
-	return `出典：${esc(pubs)}${titles}（<a href="${lic.license_url}" target="_blank" rel="noopener">${esc(lic.license)}</a>）を加工して作成`;
+	const byLicense = new Map<string, Source[]>();
+	for (const s of sources) {
+		const k = `${s.license}\u0000${s.license_url}`;
+		byLicense.set(k, [...(byLicense.get(k) ?? []), s]);
+	}
+	const parts = [...byLicense.values()].map((group) => {
+		const titles = group.map((s) => `「<a href="${s.url}" target="_blank" rel="noopener">${esc(s.title)}</a>」`).join('');
+		const pubs = [...new Set(group.map((s) => s.publisher).filter(Boolean))].join('・');
+		const lic = group[0];
+		return `${esc(pubs)}${titles}（<a href="${lic.license_url}" target="_blank" rel="noopener">${esc(lic.license)}</a>）`;
+	});
+	return `出典：${parts.join('、')}を加工して作成`;
 }
 
 export interface RouteQuery {

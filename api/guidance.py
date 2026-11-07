@@ -131,6 +131,9 @@ def build(g: PedestrianGraph, result: dict, profile: str) -> dict:
     sig, sig_t = L['tfc_signal'].to_numpy(), L['tfc_s_type'].to_numpy()
 
     coords: list[tuple[float, float]] = []
+    # 3D 表示用の（経度, 緯度, 階）。coords は同じ地点を 1 点にまとめるのでエレベーターの昇降が消える。
+    # こちらは地点か階が変わるたびに点を足す
+    floor_path: list[tuple[float, float, float | None]] = []
     steps: list[dict] = []
     prev_bearing = None
     total_d = total_t = 0.0
@@ -165,6 +168,9 @@ def build(g: PedestrianGraph, result: dict, profile: str) -> dict:
             coords.append(a)
         if coords[-1] != b:
             coords.append(b)
+        for pt in ((*a, f_from), (*b, f_to)):
+            if not floor_path or floor_path[-1] != pt:
+                floor_path.append(pt)
         if same:
             last['dist_m'] += d
             last['time_s'] += t
@@ -237,6 +243,7 @@ def build(g: PedestrianGraph, result: dict, profile: str) -> dict:
         )
     return {
         'geometry': {'type': 'LineString', 'coordinates': [[round(x, 7), round(y, 7)] for x, y in coords]},
+        'floor_path': [[round(x, 7), round(y, 7), f] for x, y, f in floor_path],
         'summary': {'dist_m': round(total_d, 1), 'time_s': round(total_t), 'link_count': len(pieces), **counts},
         'steps': steps,
         'warnings': warnings,

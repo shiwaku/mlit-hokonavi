@@ -97,6 +97,7 @@ flowchart LR
   "snap": {"origin": {"lat": 35.69, "lon": 139.69, "dist_m": 69.0}, "dest": {"lat": …, "lon": …, "dist_m": 49.0}},
   "unreachable_reason": null,
   "geometry": {"type": "LineString", "coordinates": [[139.69, 35.69], …]},
+  "floor_path": [[139.69, 35.69, 0.0], …, [139.70, 35.69, 0.0], [139.70, 35.69, -1.0], …],
   "summary": {"dist_m": 2016.8, "time_s": 2207, "link_count": 94,
               "stairs": 0, "elevator": 1, "escalator": 0, "crosswalk": 14, "crossing": 3},
   "steps": [
@@ -114,6 +115,10 @@ flowchart LR
 ```
 
 `coord_start` / `coord_end` は `geometry.coordinates` の添字。画面はステップにマウスを乗せるとその区間を強調する。
+
+`floor_path` は 3D 表示用の [経度, 緯度, 階] の列（階が不明なら null）。`geometry` は同じ地点が続くと 1 点にまとめるので
+エレベーターの昇降が消えるが、こちらは地点か階が変わるたびに点を足す（エレベーターは同じ経度・緯度で階だけ違う 2 点になる）。
+階は高さ（m）ではない。画面は「階 × 4 m × 強調倍率」を表示用の高さにする。到達できないときは `null`。
 
 | `unreachable_reason` の例 | 起きるとき |
 |---|---|
