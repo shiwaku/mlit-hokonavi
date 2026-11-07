@@ -46,6 +46,8 @@ interface Seg {
 	path: Path3;
 	acc: Access;
 	on: boolean;
+	floor: number | null;
+	floorEnd: number | null;
 }
 
 /** 地図に重ねる deck.gl のオーバーレイ（線は地図の上に描く。地下の線も地面に隠れない）。
@@ -68,6 +70,35 @@ const ADDITIVE = {
 	depthWriteEnabled: false
 } as const;
 
+const PICK_LAYER = 'network-3d';
+
+/** 3D の線をクリックしたときの地点と階。線から外れていれば null（地図の面の上の位置を使う）。
+ * 地図の面（高さ 0）ではなく、持ち上げた線の上の位置を取る（unproject3D：奥行きから 3D の座標に戻す）。
+ * 階の違う 2 点を結ぶ線（階段・エレベーターなど）は、クリックした高さに近いほうの階、
+ * ただし表示する階を 1 つに絞っているときはその階にする */
+export function pickNetwork(
+	overlay: MapboxOverlay,
+	x: number,
+	y: number,
+	o: Pick<View3dOptions, 'exaggeration' | 'viewFloor'>
+): { lngLat: [number, number] | null; floor: number | null } | null {
+	const info = overlay.pickObject({ x, y, radius: 6, layerIds: [PICK_LAYER], unproject3D: true });
+	const s = info?.object as Seg | undefined;
+	if (!s) return null;
+	const c = info?.coordinate;
+	// 線から少し外れたところ（radius の内側）をクリックしたときは、奥行きが取れず座標が無いことがある
+	const lngLat: [number, number] | null = c && c.length >= 2 ? [c[0], c[1]] : null;
+	let floor = s.floor;
+	if (s.floor !== s.floorEnd) {
+		if (o.viewFloor !== 'all' && (s.floor === o.viewFloor || s.floorEnd === o.viewFloor)) floor = o.viewFloor;
+		else if (c && c.length >= 3) {
+			const f = c[2] / (FLOOR_M * o.exaggeration);
+			floor = Math.abs(f - (s.floor ?? 0)) <= Math.abs(f - (s.floorEnd ?? 0)) ? s.floor : s.floorEnd;
+		}
+	}
+	return { lngLat, floor };
+}
+
 export function layers(o: View3dOptions) {
 	const z = (f: number | null) => (f ?? 0) * FLOOR_M * o.exaggeration;
 	const segs: Seg[] = (o.network?.features ?? []).map((f) => {
@@ -79,7 +110,9 @@ export function layers(o: View3dOptions) {
 				[b[0], b[1], z(p.floor_end)]
 			],
 			acc: p[`acc_${o.profile}`],
-			on: o.viewFloor === 'all' || p.floor === o.viewFloor || p.floor_end === o.viewFloor
+			on: o.viewFloor === 'all' || p.floor === o.viewFloor || p.floor_end === o.viewFloor,
+			floor: p.floor,
+			floorEnd: p.floor_end
 		};
 	});
 	const dark = o.theme === 'dark';
@@ -88,10 +121,11 @@ export function layers(o: View3dOptions) {
 	const width = { widthUnits: 'pixels' as const, capRounded: true, jointRounded: true };
 	const glowParams = dark ? ADDITIVE : { depthWriteEnabled: false };
 	const triggers = [o.profile, o.viewFloor, o.theme, o.exaggeration];
-	const net = (id: string, data: Seg[], w: number, color: (s: Seg) => RGBA) =>
+	const net = (id: string, data: Seg[], w: number, color: (s: Seg) => RGBA, pickable = false) =>
 		new PathLayer<Seg>({
 			id,
 			data,
+			pickable,
 			getPath: (s) => s.path,
 			getColor: color,
 			getWidth: w,
@@ -117,7 +151,8 @@ export function layers(o: View3dOptions) {
 	return [
 		// 表示しない階は、発光させずに薄く
 		net('network-3d-dim', segs.filter((s) => !s.on), 1.2, (s) => withAlpha(base(s), dark ? 40 : 55)),
-		net('network-3d', lit, 1.3, (s) => withAlpha(base(s), dark ? 150 : 190)),
+		// クリックで出発地・目的地を選べるのは、表示している階の線だけ（pickNetwork）
+		net(PICK_LAYER, lit, 1.3, (s) => withAlpha(base(s), dark ? 150 : 190), true),
 		// 経路：強い発光
 		routeLayer('route-3d-glow-wide', 40, withAlpha(rc, dark ? 60 : 40), true),
 		routeLayer('route-3d-glow', 18, withAlpha(rc, dark ? 150 : 90), true),

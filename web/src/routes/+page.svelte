@@ -15,7 +15,7 @@
 	import type { AreaInfo } from '#lib/routing/types.ts';
 	import { applyBasemapTheme, basemapPaintTable, OVERLAY } from '#lib/basemap.ts';
 	import { applyTheme, initialTheme, type Theme } from '#lib/theme.ts';
-	import { createOverlay, layers as layers3d } from '#lib/view3d.ts';
+	import { createOverlay, layers as layers3d, pickNetwork } from '#lib/view3d.ts';
 
 	// 地図の色。アクセス区分（0 通れる / 1 不明 / 2 片方向のみ / 3 通れない）。0 はテーマの色
 	const ACCESS_COLOR = ['#0d9488', '#f59e0b', '#8b5cf6', '#ef4444'];
@@ -129,8 +129,13 @@
 			const other = areas.find((a) => a.case !== areaCase && inBbox(a.bbox, p));
 			if (other) return void selectArea(other.case);
 		}
-		if (!origin) origin = p;
-		else dest = p;
+		// 階：3D で線をクリックしたらその線の階（位置も持ち上げた線の上）。
+		// 線から外れていれば、表示する階を 1 つに絞っているときはその階、それ以外は指定なし
+		const hit3d = view3d && overlay ? pickNetwork(overlay, e.point.x, e.point.y, { exaggeration, viewFloor }) : null;
+		const at = hit3d?.lngLat ?? p;
+		const floor = hit3d ? hit3d.floor : viewFloor === 'all' ? null : viewFloor;
+		if (!origin) [origin, fromFloor] = [at, floor];
+		else [dest, toFloor] = [at, floor];
 		search();
 	}
 
