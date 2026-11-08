@@ -244,7 +244,11 @@ pnpm promo                               # → web/promo/hokonavi-promo-dark.mp4
 ```
 
 環境変数：`PROMO_URL`（既定 `http://localhost:5173/`）・`CHROME_PATH`・`FFMPEG`（既定 `ffmpeg`）。
-字幕の文言・場面の順番・待ち時間は `promo.ts` の `main()` に並んでいる。
+字幕の文言・場面の順番・待ち時間は `promo.ts` に並んでいる（録画・字幕・カーソルの道具は `promo-kit.ts`）。
+
+新宿駅のデモ（西口の地下 1 階 → 階段で地上へ → 甲州街道 → 東南口、3D・約 70 秒）は `pnpm demo:shinjuku`（→ `web/promo/hokonavi-demo-shinjuku.mp4`）。
+3D の線をクリックして出発地・目的地の階を選ぶところを見せる。地下の線の画面上の位置は、開発サーバーだけが出す `window.__project3d` で求める。
+西口の地下から「東口」へ 1 回で探すと地下の通路を通って甲州街道を通らないので、目的地は東南口にしている（経由地は無い）。
 
 ---
 
