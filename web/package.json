@@ -15,7 +15,8 @@
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"test": "vitest run",
-		"promo": "node scripts/promo.ts"
+		"promo": "node scripts/promo.ts",
+		"demo:shinjuku": "node scripts/demo-shinjuku.ts"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-static": "^4.0.0",

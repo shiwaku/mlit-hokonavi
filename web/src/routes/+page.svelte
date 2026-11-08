@@ -15,7 +15,7 @@
 	import type { AreaInfo } from '#lib/routing/types.ts';
 	import { applyBasemapTheme, basemapPaintTable, OVERLAY } from '#lib/basemap.ts';
 	import { applyTheme, initialTheme, type Theme } from '#lib/theme.ts';
-	import { createOverlay, layers as layers3d, pickNetwork } from '#lib/view3d.ts';
+	import { createOverlay, FLOOR_M, layers as layers3d, pickNetwork } from '#lib/view3d.ts';
 
 	// 地図の色。アクセス区分（0 通れる / 1 不明 / 2 片方向のみ / 3 通れない）。0 はテーマの色
 	const ACCESS_COLOR = ['#0d9488', '#f59e0b', '#8b5cf6', '#ef4444'];
@@ -359,7 +359,19 @@
 		// load は 1 回しか来ない。データを待っている間に来ても取りこぼさないよう、先に待ち受ける
 		const mapLoaded = new Promise((r) => map!.once('load', r));
 		// 紹介動画の録画（web/scripts/promo.ts）が地図を操作するための入口。開発サーバーのときだけ置く
-		if (import.meta.env.DEV) (window as unknown as { __map?: maplibregl.Map }).__map = map;
+		if (import.meta.env.DEV) {
+			const w = window as unknown as Record<string, unknown>;
+			w.__map = map;
+			// 3D の線（階の高さに持ち上げた位置）の画面上の位置。録画（web/scripts/demo-shinjuku.ts）が地下の線をクリックするのに使う。
+			// deck.gl のビューポートはオーバーレイの内部（_deck）からしか取れないので、開発用に限る
+			w.__project3d = (lon: number, lat: number, floor: number): [number, number] | null => {
+				const deck = (overlay as unknown as { _deck?: { getViewports(): { project(p: number[]): number[] }[] } })?._deck;
+				const vp = deck?.getViewports()[0];
+				if (!vp) return null;
+				const [x, y] = vp.project([lon, lat, floor * FLOOR_M * exaggeration]);
+				return [x, y];
+			};
+		}
 		map.addControl(new maplibregl.NavigationControl(), 'top-right');
 		map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-right');
 
